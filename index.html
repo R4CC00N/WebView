@@ -6,8 +6,7 @@
   <body>
     <a-scene>
         <a-assets>
-            <video id="video" autoplay loop crossorigin="anonymous" controls width="640" height="360" 
-          src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.webm"></video>
+            <video id="video" autoplay loop crossorigin="anonymous" src="video.mp4"></video>
 
         </a-assets>
 
@@ -19,8 +18,16 @@
         <a-plane position="0 -1.5 -4" rotation="-90 0 0" width="10" height="4" color="#7BC8A4"></a-plane>
         <a-sky color="#ECECEC"></a-sky>
     </a-scene>
+    <script>
+      document.querySelector('a-assets').addEventListener('loaded', () => {
+        const video = document.querySelector('#video');
+        video.play();
+        console.log('Video cargado y listo para reproducirse');
+      });
+    </script>
   </body>
 </html>
+
 
 
 
