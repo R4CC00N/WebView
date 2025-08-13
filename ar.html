@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@master/dist/aframe-ar.min.js"></script>
+    <style>
+      #toggleMode {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 999;
+        padding: 10px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="toggleMode">Cambiar a AR</button>
+
+    <a-scene id="scene" embedded vr-mode-ui="enabled: true" arjs="sourceType: webcam;">
+      <a-assets>
+        <video id="video" autoplay loop="true" src="video.mp4"></video>
+      </a-assets>
+
+      <a-video id="heygen" src="#video" width="16" height="9" position="0 1 -10" loop="true"></a-video>
+
+      <a-box position="-3.5 1 -3" rotation="0 0 45" color="#4CC3D9"></a-box>
+      <a-sphere position="0 -0.5 -5" radius="1" color="#EF2D5E" opacity="0.5"></a-sphere>
+      <a-cylinder position="3.5 1 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
+      <a-plane position="0 -1.5 -4" rotation="-90 0 0" width="10" height="4" color="#7BC8A4"></a-plane>
+      <a-sky color="#ECECEC"></a-sky>
+    </a-scene>
+
+    <script>
+      const btn = document.getElementById("toggleMode");
+      const scene = document.getElementById("scene");
+
+      let isAR = false;
+
+      btn.addEventListener("click", () => {
+        isAR = !isAR;
+        if (isAR) {
+          scene.setAttribute("vr-mode-ui", "enabled: false");
+          scene.setAttribute("arjs", "sourceType: webcam; debugUIEnabled: false;");
+          btn.innerText = "Cambiar a VR";
+        } else {
+          scene.setAttribute("vr-mode-ui", "enabled: true");
+          scene.removeAttribute("arjs");
+          btn.innerText = "Cambiar a AR";
+        }
+      });
+    </script>
+  </body>
+</html>
