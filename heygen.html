@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Responsive Centered</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: rgba(83, 83, 83, 0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .video {
+            width: 90vw;            /* 90% del ancho de la ventana */
+            height: calc(90vw * 9 / 16);  /* Calcula la altura para mantener 16:9 */
+            max-height: 90vh;       /* Máximo 90% de la altura de la ventana */
+            max-width: calc(90vh * 16 / 9); /* Ajusta ancho máximo basado en la altura */
+            position: relative;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border-radius: 15px;
+            border: none;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="video">
+        <iframe
+            id="heygen"
+            src="https://app.heygen.com/embeds/406cd27faaea4689b06befb3a96b920f"
+            title="HeyGen video player"
+            allow="encrypted-media; fullscreen"
+            allowfullscreen>
+        </iframe>
+    </div>
+      <script>
+      // Obtener parámetros de la URL
+      const params = new URLSearchParams(window.location.search);
+      const videoUrl = params.get("url"); // ej: pepe.mp4 o https://.../video.mp4
+
+      if (videoUrl) {
+        const videoAsset = document.getElementById("iframe");
+        videoAsset.setAttribute("src", videoUrl); // 🔹 Cambia el src dinámicamente
+        videoAsset.load(); // Recarga el asset
+        videoAsset.play().catch(() => {
+          console.log("El navegador bloqueó autoplay, se necesita interacción.");
+        });
+      }
+    </script>
+</body>
+</html>
