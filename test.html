@@ -5,24 +5,35 @@
   </head>
   <body>
     <a-scene>
-        <a-assets>
-            <video id="video" autoplay loop="true" src="video.mp4" ></video>
-        </a-assets>
+      <a-assets>
+        <!-- Aquí NO pongo src fijo, se reemplaza por JS -->
+        <video id="video" autoplay loop muted playsinline></video>
+      </a-assets>
 
-        <a-video  id="heygen"  src="#video"  width="16"  height="9"  position="0 1 -10" loop="true" ></a-video>
+      <!-- a-video toma el asset -->
+      <a-video id="heygen" src="#video" width="16" height="9" position="0 1 -10" loop></a-video>
 
-        <a-box position="-3.5 1 -3" rotation="0 0 45" color="#4CC3D9" ></a-box>
-        <a-sphere position="0 -0.5 -5" radius="1" color="#EF2D5E" opacity="0.5"></a-sphere>
-        <a-cylinder position="3.5 1 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
-        <a-plane position="0 -1.5 -4" rotation="-90 0 0" width="10" height="4" color="#7BC8A4"></a-plane>
-        <a-sky color="#ECECEC"></a-sky>
+      <!-- Objetos de prueba -->
+      <a-box position="-3.5 1 -3" rotation="0 0 45" color="#4CC3D9"></a-box>
+      <a-sphere position="0 -0.5 -5" radius="1" color="#EF2D5E" opacity="0.5"></a-sphere>
+      <a-cylinder position="3.5 1 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
+      <a-plane position="0 -1.5 -4" rotation="-90 0 0" width="10" height="4" color="#7BC8A4"></a-plane>
+      <a-sky color="#ECECEC"></a-sky>
     </a-scene>
-  </body>
-  <script>
-          // Lee los parámetros de la URL
-      const params = new URLSearchParams(window.location.search);
-      const videoUrl = params.get("url"); // "pepe.mp4"
-      console.log('URL:',videoUrl)
 
-  </script>
+    <script>
+      // Obtener parámetros de la URL
+      const params = new URLSearchParams(window.location.search);
+      const videoUrl = params.get("url"); // ej: pepe.mp4 o https://.../video.mp4
+
+      if (videoUrl) {
+        const videoAsset = document.getElementById("video");
+        videoAsset.setAttribute("src", videoUrl); // 🔹 Cambia el src dinámicamente
+        videoAsset.load(); // Recarga el asset
+        videoAsset.play().catch(() => {
+          console.log("El navegador bloqueó autoplay, se necesita interacción.");
+        });
+      }
+    </script>
+  </body>
 </html>
