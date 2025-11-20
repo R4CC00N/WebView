@@ -1,0 +1,72 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!--Generated with https://github.com/shaka-project/shaka-packager version v3.4.2-c819dea-release-->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd" profiles="urn:mpeg:dash:profile:isoff-live:2011" minBufferTime="PT2S" type="static" availabilityStartTime="2025-11-11T00:00:00Z" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT1000S" suggestedPresentationDelay="PT6S" publishTime="2025-11-11T00:00:00Z">
+  <Period id="0" start="PT0S">
+    <EventStream schemeIdUri="urn:google:ads:ima" value="ad_breaks" timescale="90000">
+      <Event presentationTime="-540000" duration="2700000" id="1">
+        <EventData>{"type":"ad_break","breakId":"preroll-main","position":"preroll","duration":30,"startSegment":0,"endSegment":4}</EventData>
+      </Event>
+      <Event presentationTime="2160000" duration="2700000" id="2">
+        <EventData>{"type":"ad_break","breakId":"exo-midroll-1","position":"midroll","duration":30,"startSegment":5,"endSegment":9}</EventData>
+      </Event>
+      <Event presentationTime="10260000" duration="2700000" id="3">
+        <EventData>{"type":"ad_break","breakId":"exo-midroll-2","position":"midroll","duration":30,"startSegment":20,"endSegment":24}</EventData>
+      </Event>
+    </EventStream>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+
+
+
+    <AdaptationSet id="0" contentType="video" width="1920" height="1080" frameRate="90000/1502" segmentAlignment="true" par="16:9">
+      <SupplementalProperty schemeIdUri="urn:mpeg:mpegB:cicp:TransferCharacteristics" value="1" />
+      <Representation id="0" bandwidth="4861733" codecs="avc1.64002a" mimeType="video/mp4" sar="1:1">
+        <SegmentTemplate timescale="90000" initialization="video_init.mp4" media="video_$Number$.m4s" startNumber="1">
+          <SegmentTimeline>
+            <S t="1440" d="855855" />
+            <S t="857296" d="450450" />
+            <S t="1307746" d="270270" />
+            <S t="1578016" d="585585" />
+            <S t="2163601" d="270270" />
+            <S t="2433871" d="450450" />
+            <S t="2884321" d="315315" />
+            <S t="3199636" d="540540" />
+            <S t="3740176" d="630630" />
+            <S t="4370806" d="585585" />
+            <S t="4956391" d="450450" />
+            <S t="5406841" d="630630" />
+            <S t="6037471" d="450450" />
+            <S t="6487921" d="405405" />
+            <S t="6893326" d="630630" />
+            <S t="7523956" d="405405" />
+            <S t="7929361" d="630630" r="2" />
+            <S t="9821251" d="540540" />
+            <S t="10361791" d="450450" />
+            <S t="10812241" d="630630" />
+            <S t="11442871" d="450450" />
+            <S t="11893321" d="315315" />
+            <S t="12208636" d="405405" />
+            <S t="12614041" d="450450" />
+            <S t="13064491" d="270270" />
+            <S t="13334761" d="450450" />
+            <S t="13785211" d="630630" />
+            <S t="14415841" d="405405" />
+            <S t="14821246" d="585585" />
+            <S t="15406831" d="360360" />
+            <S t="15767191" d="450450" />
+            <S t="16217641" d="201202" />
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>
