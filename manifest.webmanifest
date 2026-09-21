@@ -1,0 +1,18 @@
+{
+  "short_name": "Zonas Spark",
+  "name": "Secciones por zona (Spark streaming)",
+  "icons": [
+    {
+      "src": "/images/bombilla.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/images/bombilla.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/app.html",
+  "scope": "/"
+}
