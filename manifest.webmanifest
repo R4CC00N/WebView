@@ -13,6 +13,6 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": "/app.html",
-  "scope": "/"
+  "start_url": "https://r4cc00n.github.io/WebView/app.html",
+  "scope": "https://r4cc00n.github.io/WebView/"
 }
