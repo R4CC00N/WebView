@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spark • Secciones por zona (streaming .rad)</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#000000" />
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+    }
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+    .overlay {
+      position: fixed;
+      margin: 12px;
+      bottom: 0;
+      color: white;
+      font-family: system-ui, sans-serif;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+    }
+    .overlay>* {
+      margin: 6px;
+    }
+    #zoneStatus {
+      position: fixed;
+      top: 0;
+      right: 0;
+      margin: 12px;
+      padding: 8px 12px;
+      color: #cafefe;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 6px;
+      font: 12px/1.5 monospace;
+      white-space: pre;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/",
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.180.0/three.module.js",
+        "@sparkjsdev/spark": "https://cdn.jsdelivr.net/gh/sparkjsdev/spark@main/dist/spark.module.js",
+        "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
+      }
+    }
+  </script>
+
+  <div class="overlay">
+    <h2 id="title">Secciones por zona (streaming)</h2>
+    <p id="subtitle">Mundo cargado en streaming (paged); las secciones se ocultan/muestran con máscaras SDF</p>
+  </div>
+  <pre id="zoneStatus"></pre>
+  <canvas id="canvas" tabindex="0" style="outline: none;"></canvas>
+
+  <script type="module">
+    import * as THREE from "three";
+    import {
+      SparkRenderer,
+      SplatMesh,
+      SparkControls,
+      isMobile,
+      SplatEdit,
+      SplatEditSdf,
+      SplatEditSdfType,
+      SplatEditRgbaBlendMode,
+      dyno,
+    } from "@sparkjsdev/spark";
+    import { VRButton } from "three/addons/webxr/VRButton.js";
+    import GUI from "lil-gui";
+
+    // -------------------------------------------------------------------
+    // EL MUNDO: ahora se carga en STREAMING (paged: true), vez de descargar y decodificar
+    // el archivo entero de golpe (paged: false).
+    // -------------------------------------------------------------------
+    const WORLD_URL = "https://storage.googleapis.com/forge-dev-public/asundqui/rad/260219/tijerin_w6_hobbiton-lod.rad"; // <-- sustituye por tu .rad
+
+    // -------------------------------------------------------------------
+    //  ZONAS ("Lots") NO FUNCIONAN
+    // -------------------------------------------------------------------
+    const ZONES = [
+      { id: 101, description: "Entrada norte", center: [0, 0, 0], size: [20, 12, 20], visibleRadius: 25, color: 0xff5555 },
+      { id: 102, description: "Plaza central", center: [30, 0, 0], size: [20, 12, 20], visibleRadius: 25, color: 0x55ff88 },
+      { id: 103, description: "Callejón lateral", center: [0, 0, 30], size: [20, 12, 20], visibleRadius: 25, color: 0x5599ff },
+      { id: 428, description: "Sección 428", center: [30, 0, 30], size: [20, 12, 20], visibleRadius: 25, color: 0xffcc33 },
+    ];
+
+    const ENABLE_VR = true;
+
+    // -------------------------------------------------------------------
+    // ESCENA BASE
+    // -------------------------------------------------------------------
+    const title = document.getElementById("title");
+    const subtitle = document.getElementById("subtitle");
+    const statusEl = document.getElementById("zoneStatus");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#000000");
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
+    camera.position.set(-8, 2, -8);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("canvas"), antialias: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(isMobile() ? 1 : window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener("resize", onWindowResize, false);
+
+    const spark = new SparkRenderer({
+      renderer,
+      maxStdDev: Math.sqrt(6.0),
+      pagedExtSplats: true,
+      coneFov0: 70.0,
+      coneFov: 120.0,
+      behindFoveate: 0.2,
+      coneFoveate: 0.4,
+    });
+    scene.add(spark);
+
+    const controls = new SparkControls({ canvas: renderer.domElement });
+
+    if (ENABLE_VR) {
+      renderer.xr.enabled = true;
+      // El botón sigue disponible: útil para probar en el navegador de
+      // escritorio/Quest antes de empaquetar como PWA.
+      document.body.appendChild(VRButton.createButton(renderer));
+    }
+
+    // ---------------------------------------------------------------
+    // Lanzamiento directo a VR cuando la app corre como PWA instalada
+    // (icono en la biblioteca de Quest), sin pasar por el botón.
+    // El clic en el icono de la app cuenta como la "activación de
+    // usuario" que exige requestSession().
+    // ---------------------------------------------------------------
+    function isInstalledPWA() {
+      return (
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true
+      );
+    }
+
+    async function autoEnterVRIfInstalled() {
+      if (!ENABLE_VR || !isInstalledPWA()) return;
+      if (!("xr" in navigator)) return;
+      try {
+        const supported = await navigator.xr.isSessionSupported("immersive-vr");
+        if (!supported) return;
+        const session = await navigator.xr.requestSession("immersive-vr", {
+          optionalFeatures: ["local-floor", "bounded-floor"],
+        });
+        await renderer.xr.setSession(session);
+      } catch (err) {
+        console.warn("No se pudo entrar en VR automáticamente:", err);
+      }
+    }
+    window.addEventListener("load", autoEnterVRIfInstalled);
+
+    // -------------------------------------------------------------------
+    //  CARGA DEL MUNDO EN STREAMING
+    // -------------------------------------------------------------------
+    const world = new SplatMesh({ url: WORLD_URL, paged: true });
+    //world.quaternion.set(-0.7071, 0, 0, 0.7071).normalize();
+    world.quaternion.set(1, 0, 0, 0).normalize();
+    scene.add(world);
+    title.textContent = "Secciones por zona (streaming)";
+
+    // -------------------------------------------------------------------
+    // CAPA DE OPTIMIZACIÓN CON DYNO
+    //
+    // -------------------------------------------------------------------
+
+    // --- Uniforms: se actualizan cada frame sin recompilar el shader ---
+    const uCameraPos = dyno.dynoVec3([0, 0, 0]);
+    const uCullRadius = dyno.dynoFloat(160.0);       // distancia máx. de render (unidades de mundo)
+    const uCullSoftBand = dyno.dynoFloat(25.0);      // ancho de la banda de fundido antes del corte
+    const uMinOpacity = dyno.dynoFloat(0.015);       // splats más transparentes que esto se descartan
+    const uMinScreenScale = dyno.dynoFloat(0.0009);  // umbral aprox. de "splat sub-píxel" (escala/distancia)
+
+    function createCullAndFadeModifier() {
+      return dyno.dynoBlock(
+        { gsplat: "Gsplat" },
+        { gsplat: "Gsplat" },
+        ({ gsplat }) => {
+          const splat = dyno.splitGsplat(gsplat);
+          const { center, scales, opacity, flags } = splat.outputs;
+          const dist = dyno.distance(center, uCameraPos);
+
+          // --- Fundido + culling duro por distancia ---
+          const distFade = dyno.smoothstep(
+            dyno.add(uCullRadius, uCullSoftBand),
+            uCullRadius,
+            dist
+          );
+
+          // --- Culling por tamaño proyectado (aprox. escala / distancia) ---
+          const maxScale = dyno.max(
+            dyno.max(dyno.swizzle(scales, "x"), dyno.swizzle(scales, "y")),
+            dyno.swizzle(scales, "z")
+          );
+          const screenSize = dyno.div(maxScale, dyno.max(dist, dyno.dynoConst("float", 0.001)));
+          const sizeOk = dyno.greaterThanEqual(screenSize, uMinScreenScale);
+
+          // --- Culling por opacidad base ---
+          const opacityOk = dyno.greaterThanEqual(opacity, uMinOpacity);
+
+          const outOfRange = dyno.lessThanEqual(distFade, dyno.dynoConst("float", 0.0));
+          const hardCull = dyno.or(outOfRange, dyno.or(dyno.not(sizeOk), dyno.not(opacityOk)));
+
+          const newFlags = dyno.select(hardCull, dyno.dynoConst("uint", 0), flags);
+          const newOpacity = dyno.mul(opacity, distFade);
+
+          const outGsplat = dyno.combineGsplat({ gsplat, flags: newFlags, opacity: newOpacity });
+          return { gsplat: outGsplat };
+        }
+      );
+    }
+
+    // ---Dithering estocástico por zona (fábrica reutilizable) ---
+    function createZoneDitherModifier(cfg) {
+      const halfSize = [cfg.size[0] / 2, cfg.size[1] / 2, cfg.size[2] / 2];
+      const uBoxCenter = dyno.dynoVec3(cfg.center);       // fijo, no cambia por frame
+      const uBoxHalfSize = dyno.dynoVec3(halfSize);       // fijo, no cambia por frame
+      const uCameraFade = dyno.dynoFloat(1.0);            // se actualiza cada frame
+
+      const modifier = dyno.dynoBlock(
+        { gsplat: "Gsplat" },
+        { gsplat: "Gsplat" },
+        ({ gsplat }) => {
+          const splat = dyno.splitGsplat(gsplat);
+          const { center, opacity, index, flags } = splat.outputs;
+
+          const localPos = dyno.sub(center, uBoxCenter);
+          const inX = dyno.lessThanEqual(dyno.abs(dyno.swizzle(localPos, "x")), dyno.swizzle(uBoxHalfSize, "x"));
+          const inY = dyno.lessThanEqual(dyno.abs(dyno.swizzle(localPos, "y")), dyno.swizzle(uBoxHalfSize, "y"));
+          const inZ = dyno.lessThanEqual(dyno.abs(dyno.swizzle(localPos, "z")), dyno.swizzle(uBoxHalfSize, "z"));
+          const insideBox = dyno.and(dyno.and(inX, inY), inZ);
+
+          const r = dyno.hashFloat(index);
+          const survives = dyno.lessThan(r, uCameraFade);
+          const cull = dyno.and(insideBox, dyno.not(survives));
+
+          const newFlags = dyno.select(cull, dyno.dynoConst("uint", 0), flags);
+          const outGsplat = dyno.combineGsplat({ gsplat, flags: newFlags, opacity });
+          return { gsplat: outGsplat };
+        }
+      );
+
+      return { modifier, uCameraFade };
+    }
+
+    const cullAndFadeModifier = createCullAndFadeModifier();
+
+    // pre-inicializado como array vacío hasta que se le asigna uno.
+    if (!world.worldModifiers) world.worldModifiers = [];
+
+    // El culling por distancia/opacidad/tamaño va SIEMPRE activo.
+    world.worldModifiers.push(cullAndFadeModifier);
+    world.updateGenerator();
+
+    // -------------------------------------------------------------------
+    // MÁSCARAS DE VISIBILIDAD POR ZONA (automáticas, por distancia)
+    // -------------------------------------------------------------------
+    class ZoneVisibility {
+      constructor(zonesConfig) {
+        this.zones = new Map();
+        for (const cfg of zonesConfig) {
+          const edit = new SplatEdit({
+            rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY,
+            softEdge: 0.4,
+          });
+          edit.add(
+            new SplatEditSdf({
+              type: SplatEditSdfType.BOX,
+              sizes: new THREE.Vector3(...cfg.size),
+              opacity: 0.0, // dentro de la caja: splats ocultos
+            })
+          );
+          edit.position.set(...cfg.center);
+
+          const colorEdit = new SplatEdit({
+            rgbaBlendMode: SplatEditRgbaBlendMode.SET_RGB,
+            softEdge: 0.4,
+          });
+          colorEdit.add(
+            new SplatEditSdf({
+              type: SplatEditSdfType.BOX,
+              sizes: new THREE.Vector3(...cfg.size),
+              color: new THREE.Color(cfg.color ?? 0xffffff),
+              opacity: 1.0,
+            })
+          );
+          colorEdit.position.set(...cfg.center);
+
+          // Dithering estocástico (dyno)
+          const { modifier: ditherModifier, uCameraFade } = createZoneDitherModifier(cfg);
+
+          this.zones.set(cfg.id, {
+            cfg,
+            edit,
+            colorEdit,
+            ditherModifier,
+            uCameraFade,
+            hidden: false,
+            colorized: false,
+            localCenter: new THREE.Vector3(...cfg.center),
+          });
+        }
+        this.colorizeOn = false;
+        this.ditherOn = false;
+        this.transitionBand = 6.0; // ancho (unidades de mundo) de la banda donde se hace fade+dither
+      }
+
+      enableColorize() {
+        this.colorizeOn = true;
+        for (const z of this.zones.values()) {
+          if (!z.colorized) {
+            world.add(z.colorEdit);
+            z.colorized = true;
+          }
+        }
+      }
+
+      disableColorize() {
+        this.colorizeOn = false;
+        for (const z of this.zones.values()) {
+          if (z.colorized) {
+            world.remove(z.colorEdit);
+            z.colorized = false;
+          }
+        }
+      }
+
+      // Cambia de "hide/show binario" (SplatEdit añadido/quitado, hace
+      // pop) a "fade + dithering continuo" 
+      enableDither() {
+        if (this.ditherOn) return;
+        this.ditherOn = true;
+        if (!world.worldModifiers) world.worldModifiers = [];
+        for (const z of this.zones.values()) {
+          if (z.hidden) world.remove(z.edit);
+          z.hidden = false;
+          world.worldModifiers.push(z.ditherModifier);
+        }
+        world.updateGenerator();
+      }
+
+      disableDither() {
+        if (!this.ditherOn) return;
+        this.ditherOn = false;
+        for (const z of this.zones.values()) {
+          const i = world.worldModifiers.indexOf(z.ditherModifier);
+          if (i >= 0) world.worldModifiers.splice(i, 1);
+        }
+        world.updateGenerator();
+        // volvemos a mostrar todo desde un estado limpio
+        for (const zoneId of this.zones.keys()) this.show(zoneId);
+      }
+
+      hide(id) {
+        const z = this.zones.get(id);
+        if (!z || z.hidden) return;
+        // Se cuelga de `world`, no de `scene`: así hereda su quaternion,
+        world.add(z.edit);
+        z.hidden = true;
+      }
+
+      show(id) {
+        const z = this.zones.get(id);
+        if (!z || !z.hidden) return;
+        world.remove(z.edit);
+        z.hidden = false;
+      }
+
+      update(cameraPosition) {
+        for (const z of this.zones.values()) {
+          // localCenter está en el espacio local de `world`; lo pasamos a
+          // espacio de escena para comparar correctamente con la cámara.
+          const worldPos = world.localToWorld(z.localCenter.clone());
+          const dist = cameraPosition.distanceTo(worldPos);
+
+          if (this.ditherOn) {
+            // Fade continuo: 1.0 bien dentro del radio -> 0.0 bien fuera
+            // de la banda de transición. Sin saltos, sin add/remove.
+            const band = this.transitionBand;
+            const inner = z.cfg.visibleRadius - band * 0.5;
+            const outer = z.cfg.visibleRadius + band * 0.5;
+            let t = (dist - inner) / (outer - inner);
+            t = Math.min(Math.max(t, 0), 1);
+            t = t * t * (3 - 2 * t);
+            z.uCameraFade.value = 1.0 - t;
+          } else {
+            if (dist <= z.cfg.visibleRadius) this.show(z.cfg.id);
+            else this.hide(z.cfg.id);
+          }
+        }
+      }
+
+      statusText() {
+        const lines = [];
+        for (const z of this.zones.values()) {
+          lines.push(`${z.cfg.description.padEnd(18)} ${z.hidden ? "oculta" : "visible"}`);
+        }
+        return lines.join("\n");
+      }
+    }
+
+    const zoneVis = new ZoneVisibility(ZONES);
+
+    // -------------------------------------------------------------------
+    //  GUI
+    // -------------------------------------------------------------------
+    const gui = new GUI({ title: "Secciones" });
+    const guiState = {
+      lodSplatScale: spark.lodSplatScale ?? 1.0,
+    };
+
+    gui.add(guiState, "lodSplatScale", 0.01, 2.5, 0.001)
+      .name("Nivel de detalle")
+      .onChange((v) => {
+        spark.lodSplatScale = v;
+      });
+
+    guiState.colorize = false;
+    gui.add(guiState, "colorize")
+      .name("Colorear secciones")
+      .onChange((v) => {
+        if (v) zoneVis.enableColorize();
+        else zoneVis.disableColorize();
+      });
+
+    // --- Panel de optimización (dyno) ---
+    const perfFolder = gui.addFolder("Optimización (dyno)");
+
+    guiState.ditherTransitions = false;
+    perfFolder.add(guiState, "ditherTransitions")
+      .name("Transición suave (dithering)")
+      .onChange((v) => {
+        if (v) zoneVis.enableDither();
+        else zoneVis.disableDither();
+      });
+
+    guiState.cullRadius = uCullRadius.value;
+    perfFolder.add(guiState, "cullRadius", 20, 400, 1)
+      .name("Radio de render")
+      .onChange((v) => { uCullRadius.value = v; });
+
+    guiState.cullSoftBand = uCullSoftBand.value;
+    perfFolder.add(guiState, "cullSoftBand", 1, 100, 1)
+      .name("Banda de fundido")
+      .onChange((v) => { uCullSoftBand.value = v; });
+
+    guiState.minOpacity = uMinOpacity.value;
+    perfFolder.add(guiState, "minOpacity", 0, 0.2, 0.001)
+      .name("Opacidad mínima")
+      .onChange((v) => { uMinOpacity.value = v; });
+
+    guiState.minScreenScale = uMinScreenScale.value;
+    perfFolder.add(guiState, "minScreenScale", 0, 0.01, 0.0001)
+      .name("Tamaño mínimo (px aprox.)")
+      .onChange((v) => { uMinScreenScale.value = v; });
+
+    // -------------------------------------------------------------------
+    // 6) BUCLE DE RENDER
+    // -------------------------------------------------------------------
+    let lastStatusUpdate = 0;
+
+    renderer.setAnimationLoop(function animate(time) {
+      if (!renderer.xr.isPresenting) {
+        controls.update(camera);
+      }
+
+      // Uniforms de la capa de optimización: solo actualiza .value
+      uCameraPos.value = [camera.position.x, camera.position.y, camera.position.z];
+
+      zoneVis.update(camera.position);
+
+      if (time - lastStatusUpdate > 250) {
+        statusEl.textContent = zoneVis.statusText();
+        lastStatusUpdate = time;
+      }
+
+      renderer.render(scene, camera);
+    });
+
+    onWindowResize();
+    renderer.domElement.focus();
+  </script>
+</body>
+
+</html>
