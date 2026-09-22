@@ -3,12 +3,12 @@
   "name": "Secciones por zona (Spark streaming)",
   "icons": [
     {
-      "src": "/images/bombilla.png",
+      "src": "https://r4cc00n.github.io/WebView/images/bombilla.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/images/bombilla.png",
+      "src": "https://r4cc00n.github.io/WebView/images/bombilla.png",
       "type": "image/png",
       "sizes": "512x512"
     }
