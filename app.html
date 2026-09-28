@@ -134,6 +134,29 @@
     });
     scene.add(spark);
 
+    // -------------------------------------------------------------------
+    // RIG DE JUGADOR (para locomoción en VR con los joysticks)
+    // En desktop el rig se queda en el origen y SparkControls mueve la cámara.
+    // En VR el headset controla la cámara (local al rig) y los joysticks mueven el rig.
+    // -------------------------------------------------------------------
+    const rig = new THREE.Group();
+    scene.add(rig);
+    rig.add(camera);
+    const savedDesktopPose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
+    renderer.xr.addEventListener("sessionstart", () => {
+      savedDesktopPose.pos.copy(camera.position);
+      savedDesktopPose.quat.copy(camera.quaternion);
+      // Empezamos en VR donde estaba la cámara de escritorio, a nivel de suelo
+      rig.position.set(camera.position.x, 0, camera.position.z);
+      rig.rotation.set(0, 0, 0);
+    });
+    renderer.xr.addEventListener("sessionend", () => {
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+      camera.position.copy(savedDesktopPose.pos);
+      camera.quaternion.copy(savedDesktopPose.quat);
+    });
+
     const controls = new SparkControls({ canvas: renderer.domElement });
 
     if (ENABLE_VR) {
@@ -481,15 +504,57 @@
     // -------------------------------------------------------------------
     let lastStatusUpdate = 0;
 
+    const _fwd = new THREE.Vector3();
+    const _right = new THREE.Vector3();
+    const _up = new THREE.Vector3(0, 1, 0);
+    const _camWorld = new THREE.Vector3();
+    let lastTime = 0;
+
+    function updateVRLocomotion(dt) {
+      const session = renderer.xr.getSession();
+      if (!session) return;
+      const SPEED = 3.0;      // m/s
+      const TURN_SPEED = 1.8; // rad/s
+      const DEAD = 0.15;
+
+      for (const source of session.inputSources) {
+        const gp = source.gamepad;
+        if (!gp || gp.axes.length < 4) continue;
+        const x = gp.axes[2];
+        const y = gp.axes[3];
+
+        if (source.handedness === "left") {
+          if (Math.abs(x) > DEAD || Math.abs(y) > DEAD) {
+            // Dirección según hacia dónde mira el headset (proyectada al plano XZ)
+            renderer.xr.getCamera().getWorldDirection(_fwd);
+            _fwd.y = 0;
+            if (_fwd.lengthSq() < 1e-6) continue;
+            _fwd.normalize();
+            _right.crossVectors(_fwd, _up).normalize();
+            rig.position.addScaledVector(_fwd, -y * SPEED * dt);
+            rig.position.addScaledVector(_right, x * SPEED * dt);
+          }
+        } else if (source.handedness === "right") {
+          if (Math.abs(x) > DEAD) rig.rotation.y -= x * TURN_SPEED * dt;
+        }
+      }
+    }
+
     renderer.setAnimationLoop(function animate(time) {
-      if (!renderer.xr.isPresenting) {
+      const dt = Math.min((time - lastTime) / 1000, 0.1);
+      lastTime = time;
+
+      if (renderer.xr.isPresenting) {
+        updateVRLocomotion(dt);
+      } else {
         controls.update(camera);
       }
 
-      // Uniforms de la capa de optimización: solo actualiza .value
-      uCameraPos.value = [camera.position.x, camera.position.y, camera.position.z];
+      // Posición de la cámara en espacio de MUNDO (la cámara ahora vive dentro del rig)
+      camera.getWorldPosition(_camWorld);
+      uCameraPos.value = [_camWorld.x, _camWorld.y, _camWorld.z];
 
-      zoneVis.update(camera.position);
+      zoneVis.update(_camWorld);
 
       if (time - lastStatusUpdate > 250) {
         statusEl.textContent = zoneVis.statusText();
