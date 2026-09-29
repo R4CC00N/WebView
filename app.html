@@ -98,6 +98,19 @@
     const ENABLE_VR = true;
 
     // -------------------------------------------------------------------
+    // AJUSTES DE LOCOMOCIÓN VR
+    // -------------------------------------------------------------------
+    const LOCOMOTION = {
+      speed: 3.0,               // m/s
+      sprintMultiplier: 2.0,    // mientras aprietas el grip izquierdo
+      moveReference: "head",    // "head" = hacia donde miras | "controller" = hacia donde apunta el mando izq.
+      turnMode: "snap",         // "snap" (a saltos, cómodo) | "smooth" (continuo)
+      snapAngleDeg: 30,
+      smoothTurnSpeed: 1.8,     // rad/s
+      deadzone: 0.15,
+    };
+
+    // -------------------------------------------------------------------
     // ESCENA BASE
     // -------------------------------------------------------------------
     const title = document.getElementById("title");
@@ -109,7 +122,7 @@
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     camera.position.set(-8, 2, -8);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, 0, 0);   // <-- orientación inicial de la cámara en escritorio
 
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("canvas"), antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -128,8 +141,8 @@
       maxStdDev: Math.sqrt(6.0),
       pagedExtSplats: true,
       lodSplatScale: 1.5,
-      coneFov0: 80.0,
-      coneFov: 160.0,
+      coneFov0: 70.0,
+      coneFov: 120.0,
       behindFoveate: 0.2,
       coneFoveate: 0.4,
     });
@@ -143,13 +156,36 @@
     const rig = new THREE.Group();
     scene.add(rig);
     rig.add(camera);
+
+    // Auxiliares de locomoción (declarados aquí porque los usan sessionstart y el bucle)
+    const _up = new THREE.Vector3(0, 1, 0);
+    const _camQuat = new THREE.Quaternion();
+    const _yawQuat = new THREE.Quaternion();
+    const _euler = new THREE.Euler(0, 0, 0, "YXZ");
+    const _move = new THREE.Vector3();
+    const _headPos = new THREE.Vector3();
+    const _camWorld = new THREE.Vector3();
+    let snapReady = true;
+
+    // Los mandos cuelgan del rig para que su pose incluya el movimiento del rig
+    const controllers = {};
+    for (let i = 0; i < 2; i++) {
+      const c = renderer.xr.getController(i);
+      rig.add(c);
+      c.addEventListener("connected", (e) => { controllers[e.data.handedness] = c; });
+      c.addEventListener("disconnected", (e) => { delete controllers[e.data.handedness]; });
+    }
+
     const savedDesktopPose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
     renderer.xr.addEventListener("sessionstart", () => {
       savedDesktopPose.pos.copy(camera.position);
       savedDesktopPose.quat.copy(camera.quaternion);
-      // Empezamos en VR donde estaba la cámara de escritorio, a nivel de suelo
+
+      // Empezamos en VR donde estaba la cámara de escritorio, a nivel de suelo,
+      // y mirando en la misma dirección horizontal (yaw).
+      _euler.setFromQuaternion(camera.quaternion, "YXZ");
       rig.position.set(camera.position.x, 0, camera.position.z);
-      rig.rotation.set(0, 0, 0);
+      rig.rotation.set(0, _euler.y, 0);   // <-- yaw inicial en VR (usa Math.PI para dar media vuelta)
     });
     renderer.xr.addEventListener("sessionend", () => {
       rig.position.set(0, 0, 0);
@@ -199,8 +235,8 @@
     // -------------------------------------------------------------------
     //  CARGA DEL MUNDO EN STREAMING
     // -------------------------------------------------------------------
-    const world = new SplatMesh({ url: WORLD_URL, paged: true });
-    world.quaternion.set(-0.7071, 0, 0, 0.7071).normalize();
+    const world = new SplatMesh({ url: WORLD_URL, paged: false });
+    world.quaternion.set(-0.7071, 0, 0, 0.7071).normalize();   // <-- rotación del mundo
     scene.add(world);
     title.textContent = "Secciones por zona (streaming)";
 
@@ -211,9 +247,9 @@
 
     // --- Uniforms: se actualizan cada frame sin recompilar el shader ---
     const uCameraPos = dyno.dynoVec3([0, 0, 0]);
-    const uCullRadius = dyno.dynoFloat(180.0);       // distancia máx. de render (unidades de mundo)
-    const uCullSoftBand = dyno.dynoFloat(17.0);      // ancho de la banda de fundido antes del corte
-    const uMinOpacity = dyno.dynoFloat(0.005);       // splats más transparentes que esto se descartan
+    const uCullRadius = dyno.dynoFloat(160.0);       // distancia máx. de render (unidades de mundo)
+    const uCullSoftBand = dyno.dynoFloat(25.0);      // ancho de la banda de fundido antes del corte
+    const uMinOpacity = dyno.dynoFloat(0.015);       // splats más transparentes que esto se descartan
     const uMinScreenScale = dyno.dynoFloat(0.0009);  // umbral aprox. de "splat sub-píxel" (escala/distancia)
 
     function createCullAndFadeModifier() {
@@ -499,23 +535,30 @@
       .name("Tamaño mínimo (px aprox.)")
       .onChange((v) => { uMinScreenScale.value = v; });
 
-    // -------------------------------------------------------------------
-    // 6) BUCLE DE RENDER
-    // -------------------------------------------------------------------
-    let lastStatusUpdate = 0;
+    // --- Locomoción VR ---
+    const locoFolder = gui.addFolder("Locomoción VR");
+    locoFolder.add(LOCOMOTION, "speed", 0.5, 10, 0.1).name("Velocidad (m/s)");
+    locoFolder.add(LOCOMOTION, "sprintMultiplier", 1, 4, 0.1).name("Multiplicador sprint");
+    locoFolder.add(LOCOMOTION, "moveReference", ["head", "controller"]).name("Avanzar según");
+    locoFolder.add(LOCOMOTION, "turnMode", ["snap", "smooth"]).name("Giro");
+    locoFolder.add(LOCOMOTION, "snapAngleDeg", 10, 90, 5).name("Ángulo snap (°)");
+    locoFolder.add(LOCOMOTION, "smoothTurnSpeed", 0.5, 4, 0.1).name("Velocidad giro suave");
 
-    const _fwd = new THREE.Vector3();
-    const _right = new THREE.Vector3();
-    const _up = new THREE.Vector3(0, 1, 0);
-    const _camWorld = new THREE.Vector3();
-    let lastTime = 0;
+    // -------------------------------------------------------------------
+    // LOCOMOCIÓN VR (relativa a la cámara o al mando)
+    // -------------------------------------------------------------------
+
+    // Gira el rig alrededor de la CABEZA (no del origen del rig)
+    function rotateRigAroundHead(angle) {
+      camera.getWorldPosition(_headPos);
+      rig.position.sub(_headPos).applyAxisAngle(_up, angle).add(_headPos);
+      rig.rotation.y += angle;
+    }
 
     function updateVRLocomotion(dt) {
       const session = renderer.xr.getSession();
       if (!session) return;
-      const SPEED = 3.0;      // m/s
-      const TURN_SPEED = 1.8; // rad/s
-      const DEAD = 0.15;
+      const L = LOCOMOTION;
 
       for (const source of session.inputSources) {
         const gp = source.gamepad;
@@ -524,21 +567,43 @@
         const y = gp.axes[3];
 
         if (source.handedness === "left") {
-          if (Math.abs(x) > DEAD || Math.abs(y) > DEAD) {
-            // Dirección según hacia dónde mira el headset (proyectada al plano XZ)
-            renderer.xr.getCamera().getWorldDirection(_fwd);
-            _fwd.y = 0;
-            if (_fwd.lengthSq() < 1e-6) continue;
-            _fwd.normalize();
-            _right.crossVectors(_fwd, _up).normalize();
-            rig.position.addScaledVector(_fwd, -y * SPEED * dt);
-            rig.position.addScaledVector(_right, x * SPEED * dt);
-          }
+          const mag = Math.hypot(x, y);
+          if (mag < L.deadzone) continue;
+
+          // Zona muerta reescalada (0 justo al salir) y magnitud limitada a 1 (sin diagonal más rápida)
+          const k = Math.min((mag - L.deadzone) / (1 - L.deadzone), 1) / mag;
+          _move.set(x * k, 0, y * k); // -Z = adelante, +X = derecha
+
+          // Solo usamos el yaw de la referencia: mirar arriba/abajo no afecta al avance
+          const ref = (L.moveReference === "controller" && controllers.left) ? controllers.left : camera;
+          ref.getWorldQuaternion(_camQuat);
+          _euler.setFromQuaternion(_camQuat, "YXZ");
+          _yawQuat.setFromAxisAngle(_up, _euler.y);
+          _move.applyQuaternion(_yawQuat);
+
+          const boost = gp.buttons[1]?.pressed ? L.sprintMultiplier : 1;
+          rig.position.addScaledVector(_move, L.speed * boost * dt);
+
         } else if (source.handedness === "right") {
-          if (Math.abs(x) > DEAD) rig.rotation.y -= x * TURN_SPEED * dt;
+          if (L.turnMode === "smooth") {
+            if (Math.abs(x) > L.deadzone) rotateRigAroundHead(-x * L.smoothTurnSpeed * dt);
+          } else {
+            if (Math.abs(x) > 0.6 && snapReady) {
+              rotateRigAroundHead(-Math.sign(x) * THREE.MathUtils.degToRad(L.snapAngleDeg));
+              snapReady = false;
+            } else if (Math.abs(x) < 0.3) {
+              snapReady = true;
+            }
+          }
         }
       }
     }
+
+    // -------------------------------------------------------------------
+    // BUCLE DE RENDER
+    // -------------------------------------------------------------------
+    let lastStatusUpdate = 0;
+    let lastTime = 0;
 
     renderer.setAnimationLoop(function animate(time) {
       const dt = Math.min((time - lastTime) / 1000, 0.1);
