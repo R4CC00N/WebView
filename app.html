@@ -199,8 +199,7 @@
     //  CARGA DEL MUNDO EN STREAMING
     // -------------------------------------------------------------------
     const world = new SplatMesh({ url: WORLD_URL, paged: true });
-    world.quaternion.set(-0.5, 0, 0, 0.5).normalize();
-    //world.quaternion.set(1, 0, 0, 0).normalize();
+    world.quaternion.set(1, 0, 0, 0).normalize();
     scene.add(world);
     title.textContent = "Secciones por zona (streaming)";
 
