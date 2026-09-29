@@ -127,8 +127,9 @@
       renderer,
       maxStdDev: Math.sqrt(6.0),
       pagedExtSplats: true,
-      coneFov0: 70.0,
-      coneFov: 120.0,
+      lodSplatScale: 1.5,
+      coneFov0: 80.0,
+      coneFov: 160.0,
       behindFoveate: 0.2,
       coneFoveate: 0.4,
     });
@@ -210,9 +211,9 @@
 
     // --- Uniforms: se actualizan cada frame sin recompilar el shader ---
     const uCameraPos = dyno.dynoVec3([0, 0, 0]);
-    const uCullRadius = dyno.dynoFloat(160.0);       // distancia máx. de render (unidades de mundo)
-    const uCullSoftBand = dyno.dynoFloat(25.0);      // ancho de la banda de fundido antes del corte
-    const uMinOpacity = dyno.dynoFloat(0.015);       // splats más transparentes que esto se descartan
+    const uCullRadius = dyno.dynoFloat(180.0);       // distancia máx. de render (unidades de mundo)
+    const uCullSoftBand = dyno.dynoFloat(17.0);      // ancho de la banda de fundido antes del corte
+    const uMinOpacity = dyno.dynoFloat(0.005);       // splats más transparentes que esto se descartan
     const uMinScreenScale = dyno.dynoFloat(0.0009);  // umbral aprox. de "splat sub-píxel" (escala/distancia)
 
     function createCullAndFadeModifier() {
