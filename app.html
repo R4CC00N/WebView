@@ -7,6 +7,8 @@
   <title>Spark • Secciones por zona (streaming .rad)</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#000000" />
+  <!-- Adelanta DNS+TLS con el servidor del .rad (ajusta si cambias de host) -->
+  <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
   <style>
     body {
       margin: 0;
@@ -27,6 +29,19 @@
     }
     .overlay>* {
       margin: 6px;
+    }
+    #perfHud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      margin: 12px;
+      padding: 8px 12px;
+      color: #ffe9a8;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 6px;
+      font: 12px/1.5 monospace;
+      white-space: pre;
+      pointer-events: none;
     }
     #zoneStatus {
       position: fixed;
@@ -61,6 +76,7 @@
     <p id="subtitle">Mundo cargado en streaming (paged); las secciones se ocultan/muestran con máscaras SDF</p>
   </div>
   <pre id="zoneStatus"></pre>
+  <pre id="perfHud"></pre>
   <canvas id="canvas" tabindex="0" style="outline: none;"></canvas>
 
   <script type="module">
@@ -109,6 +125,17 @@
       smoothTurnSpeed: 1.8,     // rad/s
       deadzone: 0.15,
     };
+
+    // -------------------------------------------------------------------
+    // PERFILES DE RENDIMIENTO
+    // "vr" se aplica al entrar en VR y "desktop" al salir (si el interruptor
+    // "Perfil VR automático" del GUI está activo). Ajusta los valores a tu gusto.
+    // -------------------------------------------------------------------
+    const PERF_PROFILES = {
+      desktop: { maxStdDev: Math.sqrt(6), lodSplatScale: 1.0, foveation: 0 },
+      vr: { maxStdDev: Math.sqrt(5), lodSplatScale: 0.7, foveation: 1, framebufferScale: 0.8 },
+    };
+    let currentProfile = "desktop";
 
     // -------------------------------------------------------------------
     // ESCENA BASE
@@ -185,18 +212,24 @@
       _euler.setFromQuaternion(camera.quaternion, "YXZ");
       rig.position.set(camera.position.x, 0, camera.position.z);
       rig.rotation.set(0, _euler.y, 0);   // <-- yaw inicial en VR (usa Math.PI para dar media vuelta)
+
+      if (guiState.autoVRProfile) applyPerfProfile("vr");
     });
     renderer.xr.addEventListener("sessionend", () => {
       rig.position.set(0, 0, 0);
       rig.rotation.set(0, 0, 0);
       camera.position.copy(savedDesktopPose.pos);
       camera.quaternion.copy(savedDesktopPose.quat);
+
+      if (guiState.autoVRProfile) applyPerfProfile("desktop");
     });
 
     const controls = new SparkControls({ canvas: renderer.domElement });
 
     if (ENABLE_VR) {
       renderer.xr.enabled = true;
+      // Debe fijarse antes de iniciar la sesión. Menos píxeles = menos splats que mezclar.
+      renderer.xr.setFramebufferScaleFactor(PERF_PROFILES.vr.framebufferScale ?? 1.0);
       // El botón sigue disponible: útil para probar en el navegador de
       // escritorio/Quest antes de empaquetar como PWA.
       document.body.appendChild(VRButton.createButton(renderer));
@@ -234,8 +267,8 @@
     // -------------------------------------------------------------------
     //  CARGA DEL MUNDO EN STREAMING
     // -------------------------------------------------------------------
-    const world = new SplatMesh({ url: WORLD_URL, paged: false });
-    world.quaternion.set(-0.7071, 0, 0, 0.7071).normalize();   // <-- rotación del mundo
+    const world = new SplatMesh({ url: WORLD_URL, paged: true });
+    world.quaternion.set(-0.7071, 0, 0, 0.7071).normalize();
     scene.add(world);
     title.textContent = "Secciones por zona (streaming)";
 
@@ -464,8 +497,10 @@
             t = t * t * (3 - 2 * t);
             z.uCameraFade.value = 1.0 - t;
           } else {
-            if (dist <= z.cfg.visibleRadius) this.show(z.cfg.id);
-            else this.hide(z.cfg.id);
+            // Histéresis: evita add/remove repetidos (y regeneraciones) al caminar por el borde
+            const r = z.cfg.visibleRadius, hyst = 3;
+            if (z.hidden && dist <= r - hyst) this.show(z.cfg.id);
+            else if (!z.hidden && dist > r + hyst) this.hide(z.cfg.id);
           }
         }
       }
@@ -489,7 +524,7 @@
       lodSplatScale: spark.lodSplatScale ?? 1.0,
     };
 
-    gui.add(guiState, "lodSplatScale", 0.01, 2.5, 0.001)
+    const lodCtrl = gui.add(guiState, "lodSplatScale", 0.01, 2.5, 0.001)
       .name("Nivel de detalle")
       .onChange((v) => {
         spark.lodSplatScale = v;
@@ -514,6 +549,21 @@
         else zoneVis.disableDither();
       });
 
+    guiState.cullingOn = true;
+    perfFolder.add(guiState, "cullingOn")
+      .name("Culling dyno activo")
+      .onChange((v) => {
+        const i = world.worldModifiers.indexOf(cullAndFadeModifier);
+        if (v && i < 0) world.worldModifiers.push(cullAndFadeModifier);
+        if (!v && i >= 0) world.worldModifiers.splice(i, 1);
+        world.updateGenerator();
+      });
+
+    guiState.maxStdDev = spark.maxStdDev ?? Math.sqrt(6);
+    const stdDevCtrl = perfFolder.add(guiState, "maxStdDev", 1.5, 3.0, 0.01)
+      .name("maxStdDev")
+      .onChange((v) => { spark.maxStdDev = v; });
+
     guiState.cullRadius = uCullRadius.value;
     perfFolder.add(guiState, "cullRadius", 20, 400, 1)
       .name("Radio de render")
@@ -533,6 +583,29 @@
     perfFolder.add(guiState, "minScreenScale", 0, 0.01, 0.0001)
       .name("Tamaño mínimo (px aprox.)")
       .onChange((v) => { uMinScreenScale.value = v; });
+
+    // --- Perfiles de rendimiento ---
+    guiState.autoVRProfile = true;
+
+    function applyPerfProfile(name) {
+      const p = PERF_PROFILES[name];
+      if (!p) return;
+      currentProfile = name;
+      spark.maxStdDev = p.maxStdDev;
+      spark.lodSplatScale = p.lodSplatScale;
+      guiState.maxStdDev = p.maxStdDev;
+      guiState.lodSplatScale = p.lodSplatScale;
+      lodCtrl.updateDisplay();
+      stdDevCtrl.updateDisplay();
+      if (renderer.xr.isPresenting && p.foveation !== undefined) {
+        renderer.xr.setFoveation(p.foveation);
+      }
+    }
+
+    const profFolder = gui.addFolder("Perfiles");
+    profFolder.add(guiState, "autoVRProfile").name("Perfil VR automático");
+    profFolder.add({ f: () => applyPerfProfile("vr") }, "f").name("Aplicar perfil VR");
+    profFolder.add({ f: () => applyPerfProfile("desktop") }, "f").name("Aplicar perfil escritorio");
 
     // --- Locomoción VR ---
     const locoFolder = gui.addFolder("Locomoción VR");
@@ -599,6 +672,38 @@
     }
 
     // -------------------------------------------------------------------
+    // HUD DE RENDIMIENTO (solo visible en pantalla; dentro del visor VR no se ve)
+    // -------------------------------------------------------------------
+    const perfHud = document.getElementById("perfHud");
+    let hudFrames = 0;
+    let hudLastTime = 0;
+    let hudWorst = 0;
+    let hudPrevFrame = 0;
+
+    function updatePerfHud(time) {
+      if (hudPrevFrame) hudWorst = Math.max(hudWorst, time - hudPrevFrame);
+      hudPrevFrame = time;
+      hudFrames++;
+
+      const elapsed = time - hudLastTime;
+      if (elapsed < 500) return;
+
+      const fps = (hudFrames * 1000) / elapsed;
+      const loaded = world.numSplats ?? 0;
+      perfHud.textContent = [
+        `FPS: ${fps.toFixed(1)}  (media ${(1000 / fps).toFixed(1)} ms, peor ${hudWorst.toFixed(1)} ms)`,
+        `Splats cargados: ${loaded.toLocaleString("es-ES")}`,
+        `lodSplatScale: ${spark.lodSplatScale?.toFixed?.(2) ?? "-"}   maxStdDev: ${spark.maxStdDev?.toFixed?.(2) ?? "-"}`,
+        `Culling dyno: ${guiState.cullingOn ? "ON" : "OFF"}   Dither: ${zoneVis.ditherOn ? "ON" : "OFF"}`,
+        `Perfil: ${currentProfile}   VR: ${renderer.xr.isPresenting ? "sí" : "no"}`,
+      ].join("\n");
+
+      hudFrames = 0;
+      hudWorst = 0;
+      hudLastTime = time;
+    }
+
+    // -------------------------------------------------------------------
     // BUCLE DE RENDER
     // -------------------------------------------------------------------
     let lastStatusUpdate = 0;
@@ -624,6 +729,8 @@
         statusEl.textContent = zoneVis.statusText();
         lastStatusUpdate = time;
       }
+
+      updatePerfHud(time);
 
       renderer.render(scene, camera);
     });
